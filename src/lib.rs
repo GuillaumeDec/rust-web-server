@@ -4,27 +4,50 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+//#[cfg(test)]
+//mod tests {
+//    #[test]
+//    fn it_works() {
+//        assert_eq!(2 + 2, 4);
+//    }
+//}
+
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
+enum Message {
+    NewJob(Job),
+    Terminate,
+}
+
 struct Worker {
-    _id: u16,
-    _join_handle: thread::JoinHandle<()>,
+    id: u16,
+    // use Option here such that we can later move safely the thread and call join on it.
+    // Safely b/c the compiler can check that we first check the Some() isn't None...
+    worker_thread_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl Worker {
-    pub fn new(id_: u16, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let a_thread = thread::spawn(move || {
-            // the worker is constantly listening for more jobs, indefinitely
-            loop {
-                let job = receiver.lock().unwrap().recv().unwrap();
-                println!("Worker {} got a job; executing.", id_);
-                job();
-                println!("Worker {} FINISHED the job;", id_);
+    pub fn new(id_: u16, receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
+        let a_thread = thread::spawn(move || loop {
+            let a_message = receiver.lock().unwrap().recv().unwrap();
+
+            match a_message {
+                Message::NewJob(a_job) => {
+                    println!("Worker {} got a job; executing.", id_);
+                    a_job();
+                    println!("Worker {} FINISHED the job;", id_);
+                }
+                Message::Terminate => {
+                    println!("Worker {} was told to terminate.", id_);
+                    break;
+                }
             }
-        });
+            // the worker is constantly listening for more jobs, indefinitely
+        });  // loop
+
         Worker {
-            _id: id_,
-            _join_handle: a_thread,
+            id: id_,
+            worker_thread_handle: Some(a_thread),
         }
 
     }
@@ -47,8 +70,8 @@ impl fmt::Display for PoolThreadError {
 }
 
 pub struct ThreadPool {
-    _workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Message>,
 }
 
 impl ThreadPool {
@@ -76,7 +99,7 @@ impl ThreadPool {
                 }
 
                 Ok(ThreadPool {
-                    _workers: workers,
+                    workers: workers,
                     sender: sender,
                 })
             },
@@ -105,6 +128,29 @@ impl ThreadPool {
     {
         let job = Box::new(f);
         // unwrap to let the case of sending fails happening, and we know it won't be happening
-        self.sender.send(job).unwrap();
+        self.sender.send(Message::NewJob(job)).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+
+        // will send the right # of Terminate Messages into the comm channel
+        for _ in &self.workers {
+            self.sender.send(Message::Terminate).unwrap();
+        }
+
+        for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
+
+            // we can 'take' / move the thread out of the Some
+            // a None is left in place in the variant, which is why this whole thing is safe,
+            // b/c a new call to the if below won't do anything. So Rust is happy, it's safe.
+            // If you don't use Option, Rust won't let you move the handler, maybe b/c there's a risk
+            // it gets moved twice? (somewhere else in the code?)
+            if let Some(worker_thread_handle_) = worker.worker_thread_handle.take() {
+                worker_thread_handle_.join().unwrap();
+            }
+        }
     }
 }

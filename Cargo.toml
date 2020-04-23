@@ -13,3 +13,4 @@ opt-level = 0
 opt-level = 3
 
 [dependencies]
+http = "0.2.1"
