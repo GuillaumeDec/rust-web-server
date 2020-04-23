@@ -2,11 +2,12 @@ use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::fs;
 use std::thread;
+use rust_web_server::ThreadPool;
 use std::time::Duration;
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
-    let pool = ThreadPool::new(4);
+    let pool = ThreadPool::new(3).unwrap();
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -28,7 +29,7 @@ fn handle_connection(mut stream: TcpStream) {
     let (status_line, filename) = if buffer.starts_with(get) {
         ("HTTP/1.1 200 OK\r\n\r\n", "html/hello.html")
     } else if buffer.starts_with(sleep) {
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_secs(30));
         ("HTTP/1.1 200 OK\r\n\r\n", "html/hello.html")
     } else {
         ("HTTP/1.1 404 NOT FOUND\r\n\r\n", "html/404.html")
