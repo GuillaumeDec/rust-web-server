@@ -20,7 +20,7 @@ enum Message {
 }
 
 struct Worker {
-    id: u16,
+    _id: u16,
     // use Option here such that we can later move safely the thread and call join on it.
     // Safely b/c the compiler can check that we first check the Some() isn't None...
     worker_thread_handle: Option<thread::JoinHandle<()>>,
@@ -46,7 +46,7 @@ impl Worker {
         });  // loop
 
         Worker {
-            id: id_,
+            _id: id_,
             worker_thread_handle: Some(a_thread),
         }
 
@@ -141,8 +141,6 @@ impl Drop for ThreadPool {
         }
 
         for worker in &mut self.workers {
-            println!("Shutting down worker {}", worker.id);
-
             // we can 'take' / move the thread out of the Some
             // a None is left in place in the variant, which is why this whole thing is safe,
             // b/c a new call to the if below won't do anything. So Rust is happy, it's safe.
